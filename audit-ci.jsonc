@@ -1,0 +1,8 @@
+{
+  "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
+  "high": true,
+  "allowlist": [
+    // braces <=3.0.3 ReDoS/stack exhaustion: no patched release exists; only reached via dev tooling (tsc-alias, fast-glob, commitizen).
+    "GHSA-vfj7-8cjw-p6xm"
+  ]
+}
