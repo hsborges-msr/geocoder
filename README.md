@@ -1,225 +1,352 @@
-# GitTrends Geocoder
+# Geocoder
 
-`@gittrends-app/geocoder` is a Node.js library and CLI for turning free-form
-place names into structured administrative results. It targets city, state, and
-country-level places rather than street addresses or points of interest. The CLI
-and core default to OpenStreetMap Nominatim, Photon, and LocationIQ, with
-caching, fallback providers, and request queues.
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node.js >= 20](https://img.shields.io/badge/node-%3E%3D20-339933.svg)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/types-TypeScript-3178C6.svg)](https://www.typescriptlang.org/)
 
-## Important: Nominatim usage policy
+Turn free-form location text into structured places.
 
-The default OSM provider is the public
-[Nominatim service](https://nominatim.openstreetmap.org/). Its public-service
-limit is **at most one request per second**. The official policy identifies
-clients with a `User-Agent` or `Referer`; this implementation requires an
-identifying `User-Agent` and contact email for that server. It sends the
-former as the `User-Agent` header and the latter as the `email` query
-parameter; it has no `Referer` option:
+Geocoder resolves self-reported locations, such as the ones people write on
+GitHub profiles (`"SF Bay Area"`, `"Belo Horizonte, MG"`, `"Berlin 🇩🇪"`), into a
+**city, state, and country**, with coordinates when available. It is built for
+research and data pipelines that need to geocode many short, messy strings
+reliably and politely.
 
-```bash
-OSM_EMAIL=ops@example.com \
-OSM_USER_AGENT='my-app/1.0 (https://example.com/contact)' \
-gittrends-geocoder
-```
+It ships as:
 
-For regular or long-running bulk work, Nominatim's policy also requires a
-single-threaded, cached client and a maximum of **four requests per minute**.
-The library and CLI retain safe defaults: one request per second and one
-concurrent request for regular use, and four requests per minute for the CLI's
-public bulk profile. They do not reject explicit concurrency or rate overrides,
-and the CLI bulk command honors the requested worker count. Choosing overrides
-that comply with provider terms is the caller's responsibility; use one worker
-and keep caching enabled for public Nominatim bulk work.
+- **A TypeScript library** — `@hsborges-msr/geocoder`
+- **An HTTP API** — `GET /search?q=...`, with Swagger docs
+- **A bulk CLI** — newline-delimited text in, NDJSON out, resumable
 
-Do not use the public service for autocomplete or systematic harvesting,
-scraping place details, reselling geocoding data, or building a competing
-database. Give visible OpenStreetMap/Nominatim attribution wherever results
-are shown. Queries are sent to third-party providers, which may process or log
-them: disclose those providers in your privacy notice and do not send personal
-or confidential data unless applicable privacy law and provider terms permit
-it.
+> [!NOTE]
+> Geocoder targets **administrative places** (cities, states, countries). It is
+> not designed for street addresses or points of interest.
 
-The public endpoint and a self-hosted Nominatim instance are different
-services. A custom `OSM_SERVER` is not automatically self-hosted or covered by
-the public endpoint's capacity: use an instance you operate or a provider
-whose terms permit your workload, and follow its limits. Switching providers
-does not transfer the public Nominatim policy to another provider.
+## Contents
+
+- [Why Geocoder](#why-geocoder)
+- [Install](#install)
+- [Quick start](#quick-start)
+- [Result format](#result-format)
+- [Providers](#providers)
+- [Composing geocoders](#composing-geocoders)
+- [HTTP API](#http-api)
+- [Bulk geocoding](#bulk-geocoding)
+- [Configuration](#configuration)
+- [Docker](#docker)
+- [Usage policy, attribution, and privacy](#usage-policy-attribution-and-privacy)
+- [Development](#development)
+- [License](#license)
+
+## Why Geocoder
+
+- **Multiple providers** — [OpenStreetMap Nominatim](https://nominatim.org/),
+  [Photon](https://photon.komoot.io/), and [LocationIQ](https://locationiq.com/),
+  all returning the same normalized `Address` shape.
+- **Fallback** — when one provider finds nothing or fails with a retryable
+  error, the next one is tried.
+- **Caching** — in-memory LRU with separate TTLs for found and not-found
+  results, an optional persistent store (SQLite in the CLI), and
+  deduplication of concurrent identical queries.
+- **Polite by default** — per-provider queues default to one request per
+  second, one at a time, with retries for transient failures.
+- **Validated output** — every result is checked against a
+  [Zod](https://zod.dev/) schema; malformed provider payloads are rejected.
+- **Cancellable** — every search accepts an `AbortSignal`.
+- **Deployable server** — health checks, optional inbound rate limiting,
+  graceful shutdown, structured logs, and a non-root Docker image.
 
 ## Install
 
+Requires Node.js 20 or later. The package is ESM-only.
+
 ```bash
-npm install github:gittrends-app/geocoder
+npm install github:hsborges-msr/geocoder
 # or
-yarn add github:gittrends-app/geocoder
+yarn add github:hsborges-msr/geocoder
 ```
 
-## Library usage
+## Quick start
 
-The public API method is `search`, not `geocode`:
+### Library
 
 ```typescript
-import { Cache, OpenStreetMap } from '@gittrends-app/geocoder';
+import { Cache, Fallback, OpenStreetMap, Photon } from '@hsborges-msr/geocoder';
 
 const geocoder = new Cache(
-  new OpenStreetMap({
-    osmServer: 'https://nominatim.openstreetmap.org',
-    email: process.env.OSM_EMAIL,
-    userAgent: 'my-app/1.0 (https://example.com/contact)',
-    concurrency: 1
-  }),
-  { size: 1000, positiveTtl: 3_600_000, negativeTtl: 300_000 }
+  new Fallback(
+    new OpenStreetMap({
+      osmServer: 'https://nominatim.openstreetmap.org',
+      email: 'you@example.com', // required by the public Nominatim server
+      userAgent: 'my-app/1.0 (https://example.com/contact)' // required too
+    }),
+    new Photon()
+  ),
+  { size: 1000, positiveTtl: 3_600_000, negativeTtl: 300_000 } // TTLs in ms
 );
 
-const address = await geocoder.search('Brazil');
+const address = await geocoder.search('Belo Horizonte, MG');
+// → { city: 'Belo Horizonte', state: 'Minas Gerais', country: 'Brazil', ... }
+// → null when nothing is found
 ```
 
-`Cache` TTLs are milliseconds; `0` means no expiry. It caches successful
-results and not-found results separately, normalizes cache keys, and can use a
-secondary Keyv store options. The CLI's persistent cache is a file named
-`geocoder-cache.sqlite` under `CACHE_DIR`; treat retained queries and results as
-data that may need an expiry or deletion policy.
+Every geocoder implements the same interface:
 
-Results contain `source`, `name`, `type`, `confidence`, `provider`, and may
-contain coordinates, a bounding box, and `city`, `state`, `country`, and
-`country_code` fields. `source` is the trimmed query with repeated whitespace
-collapsed. `name` trims, removes empty or repeated administrative components,
-and joins them with commas; `type` is the provider's administrative place type.
-`score` is the provider's score when available; it is **not a probability**. OSM
-and LocationIQ use provider `importance` for `confidence` and `score`, while
-Photon reports `confidence: 0` without a score. `minConfidence` filters OSM and
-LocationIQ results.
+```typescript
+search(q: string, options?: { signal?: AbortSignal }): Promise<Address | null>
+```
 
-LocationIQ is configured in library code with a required constructor
-`apiKey`; its options are `baseUrl`, `minConfidence`, `language`,
-`concurrency`, `rate`, and `retries`. Library code does not read
-`LOCATIONIQ_KEY`, `LOCATIONIQ_API_KEY`, `CACHE_DIR`, or cache TTL environment
-variables. Those environment variables are CLI configuration only.
+See the [core package README](packages/core/README.md) for all provider
+options and the [decorators guide](packages/core/src/geocoder/decorators/README.md)
+for caching, throttling, fallback, and load balancing.
 
-## CLI server
-
-The executable is `gittrends-geocoder`. Running it without a subcommand starts
-the HTTP server:
+### HTTP server
 
 ```bash
-OSM_EMAIL=ops@example.com \
+OSM_EMAIL=you@example.com \
 OSM_USER_AGENT='my-app/1.0 (https://example.com/contact)' \
-gittrends-geocoder --host 0.0.0.0 --port 8080
+npx geocoder --port 8080
 
-curl 'http://localhost:8080/search?q=Brazil'
+curl 'http://localhost:8080/search?q=Belo%20Horizonte'
 ```
 
-`GET /search?q=<place>` returns an address, or `404` when none is found. `q`
-is normalized, must be non-empty, and is limited to 500 characters. `/docs`
-serves Swagger UI and `/` redirects there. `/health`, `/health/ready`, and
-`/health/live` are local process checks and never contact providers or consume
-cache/provider capacity. They normally return `200`; `/health/live` also
-bypasses the optional inbound rate limiter, while the other two can be
-rate-limited. `/health` returns status, timestamp, and uptime; the other two
-return `{ "ready": true }` and `{ "alive": true }`.
+Open <http://localhost:8080/docs> for interactive Swagger UI.
 
-Successful searches also include `X-Geocoder-Provider` and, when available,
-`X-Geocoder-Attribution` response headers. These headers do not replace
-visible attribution in the consuming application.
-
-### Server options
-
-The server accepts these options:
-
-```text
---osm-server <SERVER>       --osm-email <EMAIL>       --osm-agent <AGENT>
---providers <LIST>          --rate-profile <public|public-bulk|self-hosted>
---provider-language <LANG>  --provider-timeout-ms <MS>
---provider-retries <COUNT>  --locationiq-key <KEY>
---cache-dir <DIR>           --cache-size <SIZE>
---cache-positive-ttl <DURATION>  --cache-negative-ttl <DURATION>
---concurrency <COUNT>       --rate-limit
---rate-limit-max <MAX>      --rate-limit-window <DURATION>
---trust-proxy <BOOLEAN>     -H, --host <HOST>       -p, --port <PORT>
-```
-
-Providers are named `osm`, `photon`, and `locationiq`; `--providers` controls
-their order. The first provider is tried first and later providers are used
-for a null result or retryable provider failure. LocationIQ requires
-`--locationiq-key` (or the CLI environment variable `LOCATIONIQ_KEY` or
-`LOCATIONIQ_API_KEY`) when selected. There is no CLI option for a LocationIQ
-base URL. Photon uses its hosted Komoot endpoint; there is intentionally no CLI
-option for a Photon base URL.
-
-`--rate-profile` accepts `public`, `public-bulk`, or `self-hosted`. The CLI
-identifies the public Nominatim server from `OSM_SERVER`; server mode applies
-one request per second and bulk mode applies four requests per minute.
-These are safe defaults, not a public Nominatim concurrency/rate policy
-enforcement mechanism: explicit `--concurrency` choices are passed through, and
-following provider terms is the caller's responsibility. `self-hosted` should
-only describe an instance you operate; a custom server still requires following
-that server's policy.
-
-The CLI environment equivalents include `OSM_SERVER`, `OSM_EMAIL`,
-`OSM_USER_AGENT`, `PROVIDERS`, `RATE_PROFILE`, `PROVIDER_LANGUAGE`,
-`PROVIDER_TIMEOUT_MS`, `PROVIDER_RETRIES`, `LOCATIONIQ_KEY`,
-`LOCATIONIQ_API_KEY`, `CACHE_DIR`, `CACHE_SIZE`,
-`CACHE_POSITIVE_TTL_MS`, `CACHE_NEGATIVE_TTL_MS`, `CONCURRENCY`, `PORT`,
-`HOST`, `LOG_LEVEL`, `RATE_LIMIT_ENABLED`, `RATE_LIMIT_MAX`,
-`RATE_LIMIT_WINDOW`, `TRUST_PROXY`, and
-`GRACEFUL_SHUTDOWN_TIMEOUT_MS`, and `NODE_ENV`. Durations accept values such as `500ms`,
-`5 seconds`, or `1 hour`.
-
-## Bulk command
-
-Input is newline-delimited text from a positional file, `--input <FILE>`, or
-stdin (the default; use `-` explicitly). Output is NDJSON on stdout and
-progress is written to stderr:
+### Bulk CLI
 
 ```bash
-OSM_EMAIL=ops@example.com \
+printf 'Paris\nSF Bay Area\nBelo Horizonte, MG\n' > places.txt
+
+OSM_EMAIL=you@example.com \
 OSM_USER_AGENT='my-app/1.0 (https://example.com/contact)' \
-gittrends-geocoder bulk places.txt \
-  --providers osm --workers 1 --cache-dir .cache \
-  --cache-positive-ttl '24 hours' --resume previous.ndjson \
+npx geocoder bulk places.txt --cache-dir .cache > results.ndjson
+```
+
+## Result format
+
+A successful search returns an `Address`. Illustrative example:
+
+```json
+{
+  "source": "Paris, France",
+  "name": "Paris, Île-de-France, France",
+  "type": "city",
+  "confidence": 0.88,
+  "score": 0.88,
+  "latitude": 48.8534951,
+  "longitude": 2.3483915,
+  "bbox": [48.8155755, 48.902156, 2.224122, 2.4697602],
+  "source_id": "relation/7444",
+  "provenance": "openstreetmap",
+  "city": "Paris",
+  "state": "Île-de-France",
+  "country": "France",
+  "country_code": "FR",
+  "provider": "openstreetmap"
+}
+```
+
+| Field | Always present | Description |
+| --- | :---: | --- |
+| `source` | ✓ | The query, trimmed and with repeated whitespace collapsed. |
+| `name` | ✓ | City, state, and country joined with commas, without empty or repeated parts. |
+| `type` | ✓ | The provider's place type (for example `city`, `state`, `country`). |
+| `confidence` | ✓ | Provider value used for `minConfidence` filtering. **Not a probability.** |
+| `provider` | ✓ | `openstreetmap`, `photon`, or `locationiq`. |
+| `score` | | Raw provider score, when the provider exposes one. |
+| `latitude`, `longitude` | | Coordinates of the place. |
+| `bbox` | | Bounding box as reported by the provider. |
+| `source_id`, `provenance` | | Provider record identifier and origin. |
+| `city`, `state`, `country` | at least one | Administrative components. |
+| `country_code` | | Upper-case ISO country code. |
+
+OpenStreetMap and LocationIQ map their `importance` value to both
+`confidence` and `score`. Photon has no comparable value, so it reports
+`confidence: 0` and no `score`.
+
+The Zod schema is exported as `AddressSchema` if you need to validate stored
+results.
+
+## Providers
+
+| Provider | Class | CLI name | API key | Notes |
+| --- | --- | --- | :---: | --- |
+| OpenStreetMap Nominatim | `OpenStreetMap` | `osm` | — | Public server requires `email` and `userAgent`. Supports self-hosted instances. |
+| Photon (Komoot) | `Photon` | `photon` | — | Uses the hosted Komoot endpoint. |
+| LocationIQ | `LocationIQ` | `locationiq` | ✓ | Commercial service with a free tier. |
+
+All providers accept `language`, `concurrency`, `rate`, and `retries`.
+OpenStreetMap and LocationIQ also accept `minConfidence`. The library never
+reads environment variables; configure it in code.
+
+## Composing geocoders
+
+Decorators wrap any `Geocoder` and can be nested freely:
+
+| Decorator | Purpose |
+| --- | --- |
+| `Cache` | LRU cache with separate positive/negative TTLs, optional persistent [Keyv](https://keyv.org/) store, and in-flight deduplication. |
+| `Fallback` | Tries the next geocoder on a `null` result or a retryable provider error. |
+| `Throttler` | Puts a geocoder behind a [p-queue](https://github.com/sindresorhus/p-queue) with retries. |
+| `LoadBalancer` | Spreads requests across geocoders, choosing the least-loaded queue. |
+
+Details and examples: [decorators guide](packages/core/src/geocoder/decorators/README.md).
+
+## HTTP API
+
+Running `geocoder` without a subcommand starts the server.
+
+| Endpoint | Description |
+| --- | --- |
+| `GET /search?q=<place>` | Returns an `Address` (`200`), `404` when nothing is found, or `400` for an invalid query. `q` must be non-empty and at most 500 characters. |
+| `GET /docs` | Swagger UI. `/` redirects here. |
+| `GET /health` | Status, timestamp, and uptime. |
+| `GET /health/ready` | `{ "ready": true }` |
+| `GET /health/live` | `{ "alive": true }`. Never rate-limited. |
+
+Health endpoints only check the local process; they never call providers.
+
+Successful searches include an `X-Geocoder-Provider` header and, when
+available, an `X-Geocoder-Attribution` header with the text to credit. These
+headers do not replace visible attribution in your application.
+
+## Bulk geocoding
+
+```bash
+geocoder bulk places.txt \
+  --providers osm --workers 1 \
+  --cache-dir .cache --cache-positive-ttl '24 hours' \
+  --resume previous.ndjson \
   --continue-on-error > results.ndjson
 ```
 
-Bulk automatically uses the `public-bulk` profile for the public Nominatim
-endpoint. Bulk options are `-i, --input <FILE>`, `--resume <FILE>`, `--workers <COUNT>`,
-and `--continue`/`--continue-on-error`, plus the provider and cache options
-listed above. Server-only options such as `--rate-limit`, `--trust-proxy`,
-`--host`, and `--port` have no effect on `bulk`. Inputs are normalized and
-deduplicated; successful queries in `--resume` are skipped. Bulk honors
-`--workers`, including values greater than one; for public Nominatim, worker and
-rate choices must follow provider terms and are the caller's responsibility.
-Each output line
-is a success record such as `{ "query": "Paris", "ok": true, "address": null }`
-(or an address object) or a failure record such as
-`{ "query": "Paris", "ok": false, "error": "Geocoding failed" }`.
+- **Input** — one place per line, from a file argument, `--input <FILE>`, or
+  stdin (`-`, the default). Lines are normalized and duplicates are removed.
+- **Output** — one JSON record per line on stdout; progress goes to stderr.
+
+  ```json
+  { "query": "Paris", "ok": true, "address": { "city": "Paris", "...": "..." } }
+  { "query": "Atlantis", "ok": true, "address": null }
+  { "query": "Lisbon", "ok": false, "error": "Geocoding failed" }
+  ```
+
+- **Resume** — `--resume <FILE>` skips queries that already succeeded in a
+  previous output file.
+- **Failures** — the run stops at the first provider failure unless
+  `--continue-on-error` is set.
+- **Pacing** — with the public Nominatim server, bulk switches to the
+  `public-bulk` profile (four requests per minute). Keep `--workers 1` and a
+  cache enabled for public Nominatim.
+
+Bulk accepts all provider and cache options below. Server-only options
+(`--host`, `--port`, `--rate-limit*`, `--trust-proxy`) are ignored.
+
+## Configuration
+
+The CLI reads options from flags or environment variables; flags take
+precedence.
+
+| Flag | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `--providers <LIST>` | `PROVIDERS` | `osm,photon` | Comma-separated provider order: `osm`, `photon`, `locationiq`. |
+| `--osm-server <URL>` | `OSM_SERVER` | `https://nominatim.openstreetmap.org` | Nominatim server. |
+| `--osm-email <EMAIL>` | `OSM_EMAIL` | — | Contact email (required for public Nominatim). |
+| `--osm-agent <AGENT>` | `OSM_USER_AGENT` | — | Identifying User-Agent (required for public Nominatim). |
+| `--locationiq-key <KEY>` | `LOCATIONIQ_KEY` | — | Required when `locationiq` is selected. |
+| `--rate-profile <PROFILE>` | `RATE_PROFILE` | `public` | `public`, `public-bulk`, or `self-hosted`. |
+| `--provider-language <LANG>` | `PROVIDER_LANGUAGE` | `en` | Preferred result language. |
+| `--provider-timeout-ms <MS>` | `PROVIDER_TIMEOUT_MS` | `5000` | Per-request provider timeout. |
+| `--provider-retries <COUNT>` | `PROVIDER_RETRIES` | `2` | Retries for transient provider failures. |
+| `--concurrency <COUNT>` | `CONCURRENCY` | `1` | Concurrent requests per provider. |
+| `--cache-dir <DIR>` | `CACHE_DIR` | — | Enables a persistent cache at `<DIR>/geocoder-cache.sqlite`. |
+| `--cache-size <SIZE>` | `CACHE_SIZE` | `1000` | In-memory cache entries. |
+| `--cache-positive-ttl <DURATION>` | `CACHE_POSITIVE_TTL_MS` | `1 hour` | TTL for found results (`0` = no expiry). |
+| `--cache-negative-ttl <DURATION>` | `CACHE_NEGATIVE_TTL_MS` | `5 minutes` | TTL for not-found results (`0` = no expiry). |
+| `-H, --host <HOST>` | `HOST` | `localhost` | Server bind address. |
+| `-p, --port <PORT>` | `PORT` | `3000` | Server port. |
+| `--rate-limit` | `RATE_LIMIT_ENABLED` | `false` | Enable inbound rate limiting. |
+| `--rate-limit-max <MAX>` | `RATE_LIMIT_MAX` | `100` | Requests per window per client. |
+| `--rate-limit-window <DURATION>` | `RATE_LIMIT_WINDOW` | `1 minute` | Rate-limit window. |
+| `--trust-proxy <BOOLEAN>` | `TRUST_PROXY` | `false` | Trust `X-Forwarded-*` headers. |
+| — | `LOG_LEVEL` | `info` | Server log level. |
+| — | `GRACEFUL_SHUTDOWN_TIMEOUT_MS` | `30000` | Shutdown grace period. |
+
+Durations accept values such as `500ms`, `5 seconds`, or `1 hour`.
+
+**Rate profiles.** Profiles only change pacing for the public Nominatim
+server: `public` applies one request per second and `public-bulk` four
+requests per minute. Other servers use the provider's default queue. Use
+`self-hosted` only to describe an instance you operate. Explicit
+`--concurrency` values are passed through unchanged.
+
+Run `geocoder --help` or `geocoder bulk --help` for the full list.
 
 ## Docker
 
-Build and run from the repository root:
-
 ```bash
-docker build -t gittrends/geocoder .
-docker run --rm -p 8080:8080 gittrends/geocoder
+docker build -t hsborges-msr/geocoder .
+docker run --rm -p 8080:8080 -v geocoder-cache:/app/.cache hsborges-msr/geocoder
 ```
 
-The image listens on `0.0.0.0` port `8080` (unprivileged), runs with `NODE_ENV=production`, uses
-`/app/.cache` as a volume, keeps up to 10,000 in-memory cache entries, and
-uses provider concurrency `1`. Its image default `OSM_SERVER` is
-`https://nominatim.geocoding.ai`, a hosted endpoint distinct from the official
-public Nominatim service; verify that endpoint's terms or override it with
-`-e OSM_SERVER=...`. If overriding it with the official public endpoint, also
-provide `OSM_EMAIL` and `OSM_USER_AGENT`. No public Nominatim identity is
-baked into the image. The CLI cache defaults are one hour for found results
-and five minutes for not-found results.
+The image runs as the unprivileged `node` user, listens on `0.0.0.0:8080`,
+keeps a persistent cache in `/app/.cache`, holds up to 10,000 entries in
+memory, and uses `/health/live` for its health check.
 
-The image runs as the unprivileged `node` user. Its health check uses
-`/health/live`; this endpoint is independent of upstream provider health.
+> [!IMPORTANT]
+> The image sets `OSM_SERVER=https://nominatim.geocoding.ai`, a hosted endpoint
+> that is **not** the official public Nominatim service. Check its terms, or
+> point it elsewhere with `-e OSM_SERVER=...`. If you use the official public
+> server, also pass `OSM_EMAIL` and `OSM_USER_AGENT`.
+
+## Usage policy, attribution, and privacy
+
+Geocoder calls third-party services. You are responsible for following their
+terms.
+
+**Public Nominatim**
+([usage policy](https://operations.osmfoundation.org/policies/nominatim/)):
+
+- At most **one request per second**; for bulk or long-running jobs, a single
+  thread, caching, and at most **four requests per minute**.
+- Identify your application: Geocoder sends `userAgent` as the `User-Agent`
+  header and `email` as the `email` query parameter.
+- No autocomplete, systematic harvesting, scraping, reselling, or building a
+  competing database.
+
+The defaults follow these limits, but explicit `concurrency`, `rate`, or
+`--workers` values are not overridden. For heavy workloads, run your own
+[Nominatim instance](https://nominatim.org/release-docs/latest/admin/Installation/)
+and use the `self-hosted` profile. A custom `OSM_SERVER` is not automatically
+covered by your own terms: follow the policy of whoever operates it.
+
+**Attribution.** Show visible credit to
+[OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (and to
+Photon or LocationIQ when used) wherever results are displayed.
+
+**Privacy.** Queries are sent to the selected providers, which may log them.
+Disclose this in your privacy notice and avoid sending personal or
+confidential data. Persistent caches keep queries and results on disk; set
+finite TTLs and a retention policy where required.
 
 ## Development
 
-```bash
-yarn install --frozen-lockfile
-yarn verify
+This is a Yarn 1 monorepo managed with [Turborepo](https://turbo.build/):
+
+```text
+packages/
+  core/  @hsborges-msr/geocoder      providers, decorators, Address schema
+  cli/   @hsborges-msr/geocoder-cli  HTTP server (Fastify) and bulk CLI
 ```
 
-The project is MIT-licensed and available at
-<https://github.com/gittrends-app/geocoder>.
+```bash
+yarn install --frozen-lockfile
+yarn verify      # lint + test + build
+yarn test        # tests only
+yarn format      # format with Biome
+```
+
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/).
+
+## License
+
+[MIT](LICENSE) © Hudson Silva Borges
