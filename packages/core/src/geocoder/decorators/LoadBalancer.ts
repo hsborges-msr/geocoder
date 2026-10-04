@@ -5,7 +5,7 @@ import { NoProvidersError } from '../../errors/index.js';
 import { Geocoder } from '../Geocoder.js';
 import { Fallback } from './Fallback.js';
 
-const debug = Debug('gittrends:geocoder:load-balancer');
+const debug = Debug('geocoder:load-balancer');
 
 /**
  * LoadBalancer decorator that distributes requests across multiple providers

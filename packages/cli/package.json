@@ -1,6 +1,15 @@
 {
-  "name": "@gittrends-app/geocoder-cli",
+  "name": "@hsborges-msr/geocoder-cli",
   "version": "5.8.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hsborges-msr/geocoder.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/hsborges-msr/geocoder#readme",
+  "bugs": {
+    "url": "https://github.com/hsborges-msr/geocoder/issues"
+  },
   "main": "./dist/cli.js",
   "types": "./dist/cli.d.ts",
   "type": "module",
@@ -9,7 +18,7 @@
     "node": ">=20.0.0"
   },
   "bin": {
-    "gittrends-geocoder": "./dist/cli.js"
+    "geocoder": "./dist/cli.js"
   },
   "scripts": {
     "lint": "biome check ./src",
@@ -25,7 +34,7 @@
   "dependencies": {
     "@fastify/swagger": "^9.6.1",
     "@fastify/swagger-ui": "^6.1.1",
-    "@gittrends-app/geocoder": "file:../core",
+    "@hsborges-msr/geocoder": "file:../core",
     "@keyv/sqlite": "^4.0.8",
     "commander": "^15.0.0",
     "fastify": "^5.12.3",

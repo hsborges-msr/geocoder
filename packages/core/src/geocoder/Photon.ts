@@ -8,7 +8,7 @@ import { queueOptions } from '../helpers/queue.js';
 import { Throttler, type ThrottlerOptions } from './decorators/Throttler.js';
 import { Geocoder } from './Geocoder.js';
 
-const debug = Debug('geocoder:Photon');
+const debug = Debug('geocoder:photon');
 
 type PhotonSearchResult = {
   features?: unknown[];

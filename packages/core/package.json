@@ -1,6 +1,15 @@
 {
-  "name": "@gittrends-app/geocoder",
+  "name": "@hsborges-msr/geocoder",
   "version": "5.8.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hsborges-msr/geocoder.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/hsborges-msr/geocoder#readme",
+  "bugs": {
+    "url": "https://github.com/hsborges-msr/geocoder/issues"
+  },
   "main": "./dist/index.js",
   "exports": "./dist/index.js",
   "types": "./dist/index.d.ts",

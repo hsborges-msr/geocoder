@@ -105,7 +105,8 @@ export default function <T>(url: string | URL, options?: FetchOptions) {
   const { headers: providedHeaders, provider, ...requestOptions } = options ?? {};
 
   const headers = new Headers(providedHeaders);
-  if (!headers.has('User-Agent')) headers.set('User-Agent', 'gittrends-geocoder');
+  if (!headers.has('User-Agent'))
+    headers.set('User-Agent', 'hsborges-msr-geocoder (+https://github.com/hsborges-msr/geocoder)');
 
   return fetch<T>(url, {
     ...requestOptions,

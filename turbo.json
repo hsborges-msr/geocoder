@@ -14,8 +14,8 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
-    "@gittrends-app/geocoder-cli#build": {
-      "dependsOn": ["@gittrends-app/geocoder#build"]
+    "@hsborges-msr/geocoder-cli#build": {
+      "dependsOn": ["@hsborges-msr/geocoder#build"]
     }
   }
 }

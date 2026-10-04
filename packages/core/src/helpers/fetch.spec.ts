@@ -27,6 +27,22 @@ describe('fetch helper', () => {
     nock.enableNetConnect();
   });
 
+  describe('default headers', () => {
+    it('sends the default User-Agent', async () => {
+      const scope = nock('https://api.example.com', {
+        reqheaders: {
+          'user-agent': 'hsborges-msr-geocoder (+https://github.com/hsborges-msr/geocoder)'
+        }
+      })
+        .get('/ua')
+        .reply(200, {});
+
+      await fetch('https://api.example.com/ua');
+
+      expect(scope.isDone()).toBe(true);
+    });
+  });
+
   describe('timeout functionality', () => {
     it('should successfully fetch when response is fast', async () => {
       const scope = nock('https://api.example.com').get('/data').reply(200, { success: true });

@@ -189,7 +189,7 @@ export function bulkContinueOnError(options: Record<string, unknown>): boolean {
 export function createProgram(): Command {
   const program = addConfigOptions(new Command());
   program
-    .name('gittrends-geocoder')
+    .name('geocoder')
     .description('Geocode addresses with configured providers')
     .helpOption('--help', 'Show usage instructions')
     .version(pJson.version)

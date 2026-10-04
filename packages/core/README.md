@@ -1,4 +1,4 @@
-# `@gittrends-app/geocoder` core
+# `@hsborges-msr/geocoder` core
 
 The core package exports the `Geocoder` interface and provider/decorator
 implementations. A geocoder implements:
@@ -10,7 +10,7 @@ search(q: string, options?: { signal?: AbortSignal }): Promise<Address | null>
 ## OpenStreetMap / Nominatim
 
 ```typescript
-import { OpenStreetMap } from '@gittrends-app/geocoder';
+import { OpenStreetMap } from '@hsborges-msr/geocoder';
 
 const geocoder = new OpenStreetMap({
   osmServer: 'https://nominatim.openstreetmap.org',
@@ -44,7 +44,7 @@ pace bulk work.
 ## Other providers
 
 ```typescript
-import { LocationIQ, Photon } from '@gittrends-app/geocoder';
+import { LocationIQ, Photon } from '@hsborges-msr/geocoder';
 
 const locationiq = new LocationIQ({
   apiKey: 'your-locationiq-key',
@@ -69,7 +69,7 @@ request per second; use the provider's documented limits when changing the
 ## Provider switching
 
 ```typescript
-import { Fallback, OpenStreetMap, Photon } from '@gittrends-app/geocoder';
+import { Fallback, OpenStreetMap, Photon } from '@hsborges-msr/geocoder';
 
 const geocoder = new Fallback(
   new OpenStreetMap({
@@ -88,7 +88,7 @@ least-loaded queue; it also wraps each choice with fallback providers.
 ## Cache
 
 ```typescript
-import { Cache, Photon } from '@gittrends-app/geocoder';
+import { Cache, Photon } from '@hsborges-msr/geocoder';
 
 const cached = new Cache(new Photon(), {
   size: 1000,

@@ -51,7 +51,7 @@ describe('CLI program', () => {
     const processOn = vi.spyOn(process, 'on').mockImplementation(() => process);
     await program.parseAsync([
       'node',
-      'gittrends-geocoder',
+      'geocoder',
       '--providers',
       'osm,photon',
       '--osm-server',
@@ -105,7 +105,7 @@ describe('CLI program', () => {
     const program = createProgram().exitOverride();
 
     await expect(
-      program.parseAsync(['node', 'gittrends-geocoder', '--providers', 'osm'])
+      program.parseAsync(['node', 'geocoder', '--providers', 'osm'])
     ).rejects.toMatchObject({
       code: 'commander.error',
       exitCode: 1,
@@ -126,7 +126,7 @@ describe('CLI program', () => {
     const program = createProgram();
     await program.parseAsync([
       'node',
-      'gittrends-geocoder',
+      'geocoder',
       'bulk',
       input,
       '--resume',
@@ -158,7 +158,7 @@ describe('CLI program', () => {
 
   it('reads bulk input from stdin when input is -', async () => {
     mocks.readFile.mockResolvedValue('stdin query\n');
-    await createProgram().parseAsync(['node', 'gittrends-geocoder', 'bulk', '-']);
+    await createProgram().parseAsync(['node', 'geocoder', 'bulk', '-']);
 
     expect(mocks.readFile).toHaveBeenCalledWith('/dev/stdin', 'utf8');
     expect(mocks.runBulk).toHaveBeenCalledWith(expect.objectContaining({ input: 'stdin query\n' }));
@@ -168,7 +168,7 @@ describe('CLI program', () => {
     const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     mocks.readFile.mockResolvedValue('stdin query\n');
-    await createProgram().parseAsync(['node', 'gittrends-geocoder', 'bulk', '-']);
+    await createProgram().parseAsync(['node', 'geocoder', 'bulk', '-']);
 
     const options = mocks.runBulk.mock.calls[0]?.[0];
     options.write('result');

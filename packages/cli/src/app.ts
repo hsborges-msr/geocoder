@@ -306,7 +306,7 @@ export function createApp(options: AppOptions): FastifyInstance {
   app.register(fastifySwagger, {
     openapi: {
       info: {
-        title: 'GitTrends Geocoder',
+        title: 'Geocoder',
         description: 'Geocode github users location',
         version: pJson.version
       }

@@ -1,17 +1,17 @@
 {
-  "name": "@gittrends-app/geocoder",
+  "name": "@hsborges-msr/geocoder",
   "version": "5.8.1",
   "private": true,
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/gittrends-app/geocoder.git"
+    "url": "https://github.com/hsborges-msr/geocoder.git"
   },
   "main": "./packages/core/dist/index.js",
   "exports": "./packages/core/dist/index.js",
   "types": "./packages/core/dist/index.d.ts",
   "bin": {
-    "gittrends-geocoder": "./packages/cli/dist/cli.js"
+    "geocoder": "./packages/cli/dist/cli.js"
   },
   "type": "module",
   "files": ["packages/core/dist", "packages/cli/dist", "package.json", "README.md"],

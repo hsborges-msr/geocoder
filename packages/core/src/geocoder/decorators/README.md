@@ -6,7 +6,7 @@ caching, throttling, fallback, or load balancing.
 ## Cache
 
 ```typescript
-import { Cache, Photon } from '@gittrends-app/geocoder';
+import { Cache, Photon } from '@hsborges-msr/geocoder';
 
 const geocoder = new Cache(new Photon(), {
   size: 1000,
@@ -26,7 +26,7 @@ restarts, so configure finite TTLs and a deletion policy when required.
 ## Throttler
 
 ```typescript
-import { Photon, Throttler } from '@gittrends-app/geocoder';
+import { Photon, Throttler } from '@hsborges-msr/geocoder';
 
 const geocoder = new Throttler(new Photon(), {
   concurrency: 1,
@@ -53,7 +53,7 @@ limits and the workload require a different queue.
 ## Fallback
 
 ```typescript
-import { Fallback, OpenStreetMap, Photon } from '@gittrends-app/geocoder';
+import { Fallback, OpenStreetMap, Photon } from '@hsborges-msr/geocoder';
 
 const geocoder = new Fallback(
   new OpenStreetMap({
@@ -72,7 +72,7 @@ provider.
 ## LoadBalancer
 
 ```typescript
-import { LoadBalancer, Photon } from '@gittrends-app/geocoder';
+import { LoadBalancer, Photon } from '@hsborges-msr/geocoder';
 
 const geocoder = new LoadBalancer([
   new Photon(),
@@ -88,7 +88,7 @@ to the other providers. An optional constructor option is
 ## Composition
 
 ```typescript
-import { Cache, Fallback, OpenStreetMap, Photon } from '@gittrends-app/geocoder';
+import { Cache, Fallback, OpenStreetMap, Photon } from '@hsborges-msr/geocoder';
 
 const geocoder = new Cache(
   new Fallback(
